@@ -5,17 +5,17 @@ import os
 import sys
 from pathlib import Path
 from typing import Union
-from utils_prep import *
-
+from hloc import extract_features, match_features, pairs_from_covisibility, triangulation
+from . import utils_prep
 # Define the Class for a Server of a client-server based localization system
 
 class Server:
 
     def __init__(self,
-                 colmap_dir: Union(str, Path),
-                 images_dir: Union(str, Path),
-                 base_dir_db: Union(str, Path) = "../data/server/db",
-                 base_dir_attack:Union(str, Path) = "../data/server/attack",
+                 colmap_dir: Union[str, Path],
+                 images_dir: Union[str, Path],
+                 base_dir_db: Union[str, Path] = "../data/server/db",
+                 base_dir_attack: Union[str, Path] = "../data/server/attack",
                  feature: str = "Superpoint_inloc",
                  num_matched_pairs_covis_db: int = 30,
                  num_matched_pairs_covis_localization: int = 30,
@@ -43,25 +43,28 @@ class Server:
         self.num_matched_pairs_covis_localization = num_matched_pairs_covis_localization
         self.thresh_ransac_pnp = thresh_ransac_pnp
 
-        self.local_feature_conf = local_feature_confs[feature]
-        self.matcher_conf = matcher_confs[feature]
+        self.local_feature_conf = utils_prep.local_feature_confs[feature]
+        self.matcher_conf = utils_prep.matcher_confs[feature]
+        self.global_feature_conf = utils_prep.global_feature_conf
 
         self.local_feature_name = self.local_feature_conf['model']['name']
         self.db_matcher_name = self.matcher_conf['model']['name']
+        self.global_feature_name = self.global_feature_conf['model']['name']
 
-        self.local_feature_dir = self.base_dir_sfm / f"{self.local_feature_name}/"
-        self.global_feature_dir = self.base_dir_sfm / f"{self.global_feature_name}/"
+        self.db_sfm_dir = self.base_dir_db / f"{self.local_feature_name}/" / "sfm"
+
+        self.local_feature_dir = self.db_sfm_dir / f"{self.local_feature_name}/"
+        self.global_feature_dir = self.db_sfm_dir / f"{self.global_feature_name}/"
 
         self.local_feature_path = self.local_feature_dir / f"{self.local_feature_conf['output']}.h5"
-        self.global_feature_path = self.global_feature_dir / f"{global_feature_conf['output']}.h5"
+        self.global_feature_path = self.global_feature_dir / f"{utils_prep.global_feature_conf['output']}.h5"
 
         self.pairs_path = self.local_feature_dir / f"pairs_covisibility_{num_matched_pairs_covis_db}.txt"
         self.matches_path = self.local_feature_dir / f"matches_{self.db_matcher_name}.h5"
 
-        self.db_sfm_dir = self.base_dir_db / f"{self.local_feature_name}/" / "sfm"
+        
 
     def prep(self,
-             poses_path: Union(str, Path),
              force_extract_local: bool = False,
              force_extract_global: bool = False,
              force_extract_pairs_from_covis:bool  = False,
@@ -77,7 +80,7 @@ class Server:
             print("Skipping local feature extraction")
 
         if not self.global_feature_path.exists() or force_extract_global:
-            self.global_feature_path = extract_features.main(global_feature_conf, self.images_dir, feature_path = self.global_feature_path)
+            self.global_feature_path = extract_features.main(self.global_feature_conf, self.images_dir, feature_path = self.global_feature_path)
         else:
             print("Skipping global feature extraction")
 
@@ -102,18 +105,15 @@ class Server:
                 os.remove(sfm_dir / "sparse.*")
                 
             print("--------------- Started Triangulation ------------------")
-            triangulation.triangulate_using_poses_and_intrinsics(images_dir = images_dir,
-                                                sfm_dir = sfm_dir, 
-                                                poses_path = poses_path, 
-                                                pairs_path = pairs_path, 
-                                                local_features_path = local_feature_path, 
-                                                matches_path = matches_path, 
-                                                camera_intrinsics_params = camera_intrinsics_params, 
-                                                colmap_camera_model = colmap_camera_model,
-                                                colmap_path='colmap', 
-                                                skip_geometric_verification=False, 
-                                                min_match_score=None, 
-                                                is_poses_dir=False)
+            triangulation.main(
+                sfm_dir = sfm_dir,
+                reference_sfm_model= self.colmap_dir,
+                image_dir=self.images_dir,
+                pairs=self.pairs_path, 
+                features=self.local_feature_path,
+                matches=self.matches_path,
+                colmap_path='colmap')
+
         else:
             print("Skipping sfm")
 
@@ -122,4 +122,4 @@ class Server:
         if export_ply:
             colmap_pts_path = sfm_dir / "points3D.bin"
             out_ply_path = sfm_dir / "sparse.ply"
-            export_colmap_pts_as_ply(str(colmap_pts_path), str(out_ply_path))
+            utils_prep.export_colmap_pts_as_ply(str(colmap_pts_path), str(out_ply_path))

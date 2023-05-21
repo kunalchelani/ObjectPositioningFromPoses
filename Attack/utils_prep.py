@@ -1,12 +1,13 @@
-from hloc import extract_features, match_features, pairs_from_poses, pairs_from_covisibility, triangulation
+from hloc import extract_features, match_features
 from hloc.utils.read_write_model import *
 import open3d as o3d
 
 # Feature Configs
-superpoint_feature_conf  = extract_features.confs['superpoint_inloc']
+superpoint_inloc_feature_conf  = extract_features.confs['superpoint_inloc']
+superpoint_aachen_feature_conf = extract_features.confs['superpoint_aachen']
 sift_feature_conf = extract_features.confs['sift']
 r2d2_feature_conf = extract_features.confs['r2d2']
-local_feature_confs = {'superpoint' : superpoint_feature_conf , 'sift' : sift_feature_conf, 'r2d2' : r2d2_feature_conf}
+local_feature_confs = {'superpoint_inloc' : superpoint_inloc_feature_conf, 'superpoint_aachen': superpoint_aachen_feature_conf, 'sift' : sift_feature_conf, 'r2d2' : r2d2_feature_conf}
 
 global_feature_conf = extract_features.confs['netvlad']
 
@@ -15,7 +16,7 @@ superglue_conf = match_features.confs['superglue']
 nn_mutual_conf = match_features.confs['NN-mutual']
 nn_ratio_conf = match_features.confs['NN-ratio']
 
-matcher_confs = {'superpoint' : superglue_conf, 'r2d2': nn_mutual_conf, 'sift' : nn_ratio_conf}
+matcher_confs = {'superpoint_inloc' : superglue_conf, 'superpoint_aachen' : superglue_conf, 'r2d2': nn_mutual_conf, 'sift' : nn_ratio_conf}
 global_feature_name = global_feature_conf['model']['name']
 
 def export_colmap_pts_as_ply(colmap_pts_path, out_ply_path, pct_pts = 100):
