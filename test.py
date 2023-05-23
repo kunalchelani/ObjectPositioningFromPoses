@@ -1,4 +1,5 @@
 import Attack.Server as S
+import Attack.Client as C
 
 def prepare_server():
     server = S.Server(colmap_dir = "data/server/scene0040_00/colmap",
@@ -12,6 +13,12 @@ def prepare_server():
     
     server.prep(perform_server_sfm=True)
 
+def prep_client():
+    client = C.Client(base_dir = "data/client/computer_desk/",
+                      colmap_dir = "data/client/computer_desk/colmap",
+                      images_dir = "data/client/computer_desk/images",
+                      feature="superpoint_inloc",)
 
 if __name__ == "__main__":
-    prepare_server()
+    prep_client()
+
