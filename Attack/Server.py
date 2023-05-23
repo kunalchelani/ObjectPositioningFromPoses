@@ -53,7 +53,7 @@ class Server:
         self.global_feature_conf = utils_prep.global_feature_conf
 
         self.local_feature_name = self.local_feature_conf['model']['name']
-        self.db_matcher_name = self.matcher_conf['model']['name']
+        self.matcher_name = self.matcher_conf['model']['name']
         self.global_feature_name = self.global_feature_conf['model']['name']
 
         self.local_feature_dir = self.base_dir_db / f"{self.local_feature_name}/"
@@ -63,7 +63,7 @@ class Server:
         self.global_feature_path = self.global_feature_dir / f"{utils_prep.global_feature_conf['output']}.h5"
 
         self.pairs_path = self.base_dir_db / f"pairs_covisibility_{num_matched_pairs_covis_db}.txt"
-        self.matches_path = self.local_feature_dir / f"matches_{self.db_matcher_name}.h5"
+        self.matches_path = self.local_feature_dir / f"matches_{self.matcher_name}.h5"
 
         self.db_sfm_dir = self.base_dir_db / f"{self.local_feature_name}/" / "sfm"
 
@@ -78,22 +78,22 @@ class Server:
         # Skip if already done and not forced
 
         if not self.local_feature_path.exists() or force_extract_local:
-            local_feature_path = extract_features.main(self.local_feature_conf, self.images_dir, feature_path = self.local_feature_path)
+            _ = extract_features.main(self.local_feature_conf, self.images_dir, feature_path = self.local_feature_path)
         else:
             print("Skipping local feature extraction")
 
         if not self.global_feature_path.exists() or force_extract_global:
-            self.global_feature_path = extract_features.main(self.global_feature_conf, self.images_dir, feature_path = self.global_feature_path)
+            _ = extract_features.main(self.global_feature_conf, self.images_dir, feature_path = self.global_feature_path)
         else:
             print("Skipping global feature extraction")
 
         if not self.pairs_path.exists() or force_extract_pairs_from_covis:
-            self.pairs_path = pairs_from_covisibility.main(self.colmap_dir, self.pairs_path, self.num_matched_pairs_covis_db)
+            _ = pairs_from_covisibility.main(self.colmap_dir, self.pairs_path, self.num_matched_pairs_covis_db)
         else:
             print("Skipping covis pair finding")
 
         if not self.matches_path.exists() or force_match_features:
-            self.matches_path = match_features.main(self.matcher_conf, self.pairs_path, self.local_feature_path, matches = self.matches_path)
+            _ = match_features.main(self.matcher_conf, self.pairs_path, self.local_feature_path, matches = self.matches_path)
         else:
             print("Skipping matching")
 
@@ -101,11 +101,12 @@ class Server:
         
         if perform_server_sfm:
             if sfm_dir.is_dir():
-                os.remove(sfm_dir / "cameras.*")
-                os.remove(sfm_dir / "points3D.*")
-                os.remove(sfm_dir / "images.*")
-                os.remove(sfm_dir / "database.*")
-                os.remove(sfm_dir / "sparse.*")
+                # List the files in the directory
+                files = os.listdir(sfm_dir)
+                # If cameras.bin, images.bin and points3D.bin are present, skip sfm
+                if "cameras.bin" in files and "images.bin" in files and "points3D.bin" in files:
+                    print("Skipping sfm")
+                    return    
                 
             print("--------------- Started Triangulation ------------------")
             triangulation.main(
@@ -144,7 +145,9 @@ class Server:
         # Extract local features from query images
         
         base_path_attack_feat = self.base_dir_attack / client_name / f"{self.feature}"
-
+        if not base_path_attack_feat.exists():
+            os.makedirs(base_path_attack_feat, exist_ok=True)
+        
         client_server_retrieved_pairs_path = self.base_dir_attack / client_name / f"pairs_retrieved_{num_retrived_db_images}.txt"
 
         client_server_matches_path = base_path_attack_feat  / f"matches_{self.matcher_name}_{num_retrived_db_images}.h5"
@@ -155,10 +158,13 @@ class Server:
 
         assert query_images_with_intrinsics is not None, "Please provide the path to the query images with intrinsics file"
 
+        query_fnames = []
         with open(query_images_with_intrinsics, 'r') as f:
-            num_queries = len(f.readlines())
+            for line in f.readlines():
+                query_fnames.append(line.split(" ")[0])
+        
 
-        print(f"Localizing {num_queries} images provided against the server using {self.feature} local feature the RANSAC thresh: {self.thresh_ransac_pnp}")
+        print(f"Localizing {len(query_fnames)} images provided against the server using {self.feature} local feature the RANSAC thresh: {self.thresh_ransac_pnp}")
         
         # -------------------------- Client feature extraction ----------------------------- #
 
@@ -184,7 +190,7 @@ class Server:
             pairs_from_retrieval.main(descriptors = client_global_features_path, 
                                         output = client_server_retrieved_pairs_path, 
                                         num_matched = num_retrived_db_images, 
-                                        query_list = None, 
+                                        query_list = query_fnames, 
                                         db_model = self.db_sfm_dir, 
                                         db_descriptors = self.global_feature_path,
                                         )
