@@ -14,28 +14,33 @@ class Server:
     def __init__(self,
                  colmap_dir: Union[str, Path],
                  images_dir: Union[str, Path],
-                 base_dir_db: Union[str, Path] = "../data/server/db",
-                 base_dir_attack: Union[str, Path] = "../data/server/attack",
+                 base_dir_db: Union[str, Path] = "data/server/db",
+                 base_dir_attack: Union[str, Path] = "data/server/attack",
                  feature: str = "Superpoint_inloc",
                  num_matched_pairs_covis_db: int = 30,
                  num_matched_pairs_covis_localization: int = 30,
                  thresh_ransac_pnp: float = 12) -> None:
-        
+
+        parent_dir = Path(__file__).parent.parent
+
         if isinstance(colmap_dir, str):
             colmap_dir = Path(colmap_dir)
-        self.colmap_dir = colmap_dir
+        self.colmap_dir = parent_dir / colmap_dir
 
         if isinstance(images_dir, str):
             images_dir = Path(images_dir)
         self.images_dir = images_dir
+        self.images_dir = parent_dir / images_dir
 
         if isinstance(base_dir_db, str):
             base_dir_db = Path(base_dir_db)
-        self.base_dir_db = base_dir_db
+        self.base_dir_db =  base_dir_db
+        self.base_dir_db = parent_dir / base_dir_db
 
         if isinstance(base_dir_attack, str):
             base_dir_attack = Path(base_dir_attack)
         self.base_dir_attack = base_dir_attack
+        self.base_dir_attack = parent_dir / base_dir_attack
 
         self.feature = feature
         
@@ -51,18 +56,16 @@ class Server:
         self.db_matcher_name = self.matcher_conf['model']['name']
         self.global_feature_name = self.global_feature_conf['model']['name']
 
-        self.db_sfm_dir = self.base_dir_db / f"{self.local_feature_name}/" / "sfm"
-
-        self.local_feature_dir = self.db_sfm_dir / f"{self.local_feature_name}/"
-        self.global_feature_dir = self.db_sfm_dir / f"{self.global_feature_name}/"
+        self.local_feature_dir = self.base_dir_db / f"{self.local_feature_name}/"
+        self.global_feature_dir = self.base_dir_db / f"{self.global_feature_name}/"
 
         self.local_feature_path = self.local_feature_dir / f"{self.local_feature_conf['output']}.h5"
         self.global_feature_path = self.global_feature_dir / f"{utils_prep.global_feature_conf['output']}.h5"
 
-        self.pairs_path = self.local_feature_dir / f"pairs_covisibility_{num_matched_pairs_covis_db}.txt"
+        self.pairs_path = self.base_dir_db / f"pairs_covisibility_{num_matched_pairs_covis_db}.txt"
         self.matches_path = self.local_feature_dir / f"matches_{self.db_matcher_name}.h5"
 
-        
+        self.db_sfm_dir = self.base_dir_db / f"{self.local_feature_name}/" / "sfm"
 
     def prep(self,
              force_extract_local: bool = False,
@@ -85,12 +88,12 @@ class Server:
             print("Skipping global feature extraction")
 
         if not self.pairs_path.exists() or force_extract_pairs_from_covis:
-            pairs_path = pairs_from_covisibility.main(self.colmap_dir, self.images_dir, self.pairs_path, self.num_matched_pairs_covis_db)
+            self.pairs_path = pairs_from_covisibility.main(self.colmap_dir, self.pairs_path, self.num_matched_pairs_covis_db)
         else:
             print("Skipping covis pair finding")
 
-        if not matches_path.exists() or force_match_features:
-            matches_path = match_features.main(self.matcher_conf, pairs_path, local_feature_path, matches = matches_path)
+        if not self.matches_path.exists() or force_match_features:
+            self.matches_path = match_features.main(self.matcher_conf, self.pairs_path, self.local_feature_path, matches = self.matches_path)
         else:
             print("Skipping matching")
 
