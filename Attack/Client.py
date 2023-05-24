@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Union
 from hloc import extract_features
-from . import utils_prep
+from . import utils_prep, utils_attack, Server
 
 # A client class that is used to attack the server
 
@@ -52,7 +52,8 @@ class Client:
         self.local_feature_path = base_dir / feature / self.local_feature_conf['output']
         self.global_feature_path = base_dir / self.global_feature_conf['output']
 
-
+        self.object_ply_path = base_dir / "model.ply"
+        
     def prep_for_localization(self, 
                               query_fnames: list = None,
                               force_extract_local_features: bool = False,
@@ -86,11 +87,42 @@ class Client:
                                                                 )
 
         pass
+    
+    def align_local_server_poses(self,
+                                 server: Server,
+                                 rot_thresh: float,
+                                 cc_thresh: float,
+                                 scale: float,
+                                 num_retrived_db_images: int = 30,
+                                 average_inliers: bool = True,
+                                 query_imnames_dir: Union[str, Path] = None,):
+        
+        local_poses_path = self.colmap_dir / "images.txt"
+        if not local_poses_path.exists():
+            local_poses_path = self.colmap_dir / "images.bin"
+            if not local_poses_path.exists():
+                raise ValueError(f"Neither images.txt nor images.bin exist in {self.colmap_dir}")
+        
+        attack_base_dir = self.base_dir / server.name / self.feature
+        if not attack_base_dir.exists():
+            os.makedirs(attack_base_dir, exist_ok=True)
+            
+        local_poses_path = self.colmap_dir / "images.txt"
+        attack_poses_path =  attack_base_dir / f"poses_{server.matcher_name}_{num_retrived_db_images}_{server.thresh_ransac_pnp}.txt"
+        aligned_object_ply_path = attack_base_dir / f"aligned_model_{num_retrived_db_images}_{server.thresh_ransac_pnp}.ply"
+        
+        rot, trans, inliers = utils_attack.align_poses(attack_poses_path = attack_poses_path,
+                local_poses_path = local_poses_path,
+                rot_thresh = rot_thresh,
+                cc_thresh = cc_thresh,
+                scale = scale,
+                average_inliers = average_inliers,
+                query_imnames_dir = query_imnames_dir,
+                )
 
+        return rot, trans, inliers
+    
     def visualize_cams_server_map():
-        pass
-
-    def align_local_and_server_poses():
         pass
 
     def visualize_aligned_model_server_map():

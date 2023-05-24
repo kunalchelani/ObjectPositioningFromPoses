@@ -12,10 +12,11 @@ from . import utils_prep
 class Server:
 
     def __init__(self,
+                 name : str,
                  colmap_dir: Union[str, Path],
                  images_dir: Union[str, Path],
                  base_dir_db: Union[str, Path] = "data/server/db",
-                 base_dir_attack: Union[str, Path] = "data/server/attack",
+                 base_dir_query: Union[str, Path] = "data/server/query",
                  feature: str = "Superpoint_inloc",
                  num_matched_pairs_covis_db: int = 30,
                  num_matched_pairs_covis_localization: int = 30,
@@ -37,10 +38,10 @@ class Server:
         self.base_dir_db =  base_dir_db
         self.base_dir_db = parent_dir / base_dir_db
 
-        if isinstance(base_dir_attack, str):
-            base_dir_attack = Path(base_dir_attack)
-        self.base_dir_attack = base_dir_attack
-        self.base_dir_attack = parent_dir / base_dir_attack
+        if isinstance(base_dir_query, str):
+            base_dir_query = Path(base_dir_query)
+        self.base_dir_attack = base_dir_query
+        self.base_dir_query = parent_dir / base_dir_query
 
         self.feature = feature
         
@@ -66,7 +67,8 @@ class Server:
         self.matches_path = self.local_feature_dir / f"matches_{self.matcher_name}.h5"
 
         self.db_sfm_dir = self.base_dir_db / f"{self.local_feature_name}/" / "sfm"
-
+        self.name = name
+        
     def prep(self,
              force_extract_local: bool = False,
              force_extract_global: bool = False,
@@ -130,11 +132,7 @@ class Server:
 
 
     def localize(self,
-                 client_name: str,
-                 query_images_with_intrinsics: Union[Path, str] = None,
-                 client_local_features_path: Union[Path, str] = None,
-                 client_global_features_path: Union[Path, str] = None,
-                 client_images_dir: Union[Path, str] = None,
+                 client,
                  num_retrived_db_images: int  = 30,
                  force_extract_local_features: bool = False,
                  force_extract_global_features: bool = False,
@@ -144,22 +142,30 @@ class Server:
 
         # Extract local features from query images
         
-        base_path_attack_feat = self.base_dir_attack / client_name / f"{self.feature}"
-        if not base_path_attack_feat.exists():
-            os.makedirs(base_path_attack_feat, exist_ok=True)
+        assert client.feature == self.feature, "Client feature should be the same as the server feature"
         
-        client_server_retrieved_pairs_path = self.base_dir_attack / client_name / f"pairs_retrieved_{num_retrived_db_images}.txt"
+        # Retreived images and matches will be stored in the server side 
+        base_dir_save = client.base_dir / self.name 
+        base_dir_save_feat = base_dir_save / f"{self.feature}/"
+        
+        if not base_dir_save.exists():
+            os.makedirs(base_dir_save, exist_ok=True)
+        
+        if not base_dir_save_feat.exists():
+            os.makedirs(base_dir_save_feat, exist_ok=True)
+        
+        client_server_retrieved_pairs_path = base_dir_save / f"pairs_retrieved_{num_retrived_db_images}.txt"
 
-        client_server_matches_path = base_path_attack_feat  / f"matches_{self.matcher_name}_{num_retrived_db_images}.h5"
+        client_server_matches_path = base_dir_save_feat  / f"matches_{self.matcher_name}_{num_retrived_db_images}.h5"
 
-        localized_poses_file_path = base_path_attack_feat / f"poses_{self.matcher_name}_{num_retrived_db_images}_{self.thresh_ransac_pnp}.txt"
+        localized_poses_file_path = base_dir_save_feat / f"poses_{self.matcher_name}_{num_retrived_db_images}_{self.thresh_ransac_pnp}.txt"
 
         # Get number of query images by reading the intrinsics file
 
-        assert query_images_with_intrinsics is not None, "Please provide the path to the query images with intrinsics file"
+        assert client.query_images_with_intrinsics_file_path is not None, "Please provide the path to the query images with intrinsics file"
 
         query_fnames = []
-        with open(query_images_with_intrinsics, 'r') as f:
+        with open(client.query_images_with_intrinsics_file_path, 'r') as f:
             for line in f.readlines():
                 query_fnames.append(line.split(" ")[0])
         
@@ -168,26 +174,26 @@ class Server:
         
         # -------------------------- Client feature extraction ----------------------------- #
 
-        if force_extract_local_features or (not client_local_features_path.exists()):
-            print(f"Extracting client features to be saved at {client_local_features_path}")
+        if force_extract_local_features or (not client.local_feature_path.exists()):
+            print(f"Extracting client features to be saved at {client.local_feature_path}")
             
-            client_local_features_path = extract_features.main(conf = self.local_feature_conf,
-                                                                image_dir = Path(client_images_dir), 
-                                                                feature_path = client_local_features_path,
+            _ = extract_features.main(conf = self.local_feature_conf,
+                                                                image_dir = Path(client.images_dir), 
+                                                                feature_path = client.local_feature_path,
                                                                 )
 
-        if force_extract_global_features or (not client_global_features_path.exists()):
+        if force_extract_global_features or (not client.global_feature_path.exists()):
 
-            client_global_features_path = extract_features.main(conf = self.global_feature_conf,
-                                                                image_dir = Path(client_images_dir),
-                                                                feature_path = client_global_features_path,
+            _ = extract_features.main(conf = self.global_feature_conf,
+                                                                image_dir = Path(client.images_dir),
+                                                                feature_path = client.global_feature_path,
                                                                 )
             
         # -------------------------- Get retrived images and match ------------------------- #
     
         if force_retrival or (not client_server_retrieved_pairs_path.exists()):
 
-            pairs_from_retrieval.main(descriptors = client_global_features_path, 
+            pairs_from_retrieval.main(descriptors = client.global_feature_path, 
                                         output = client_server_retrieved_pairs_path, 
                                         num_matched = num_retrived_db_images, 
                                         query_list = query_fnames, 
@@ -199,7 +205,7 @@ class Server:
 
             client_server_matches_path = match_features.main(conf= self.matcher_conf, 
                                                             pairs = client_server_retrieved_pairs_path, 
-                                                            features = client_local_features_path, 
+                                                            features = client.local_feature_path, 
                                                             matches = client_server_matches_path, 
                                                             features_ref = self.local_feature_path,
                                                             force_match = force_match_client_server,
@@ -210,9 +216,9 @@ class Server:
         if not os.path.exists(localized_poses_file_path):
             localize_sfm.main(
                 reference_sfm = self.db_sfm_dir,
-                queries = query_images_with_intrinsics,
+                queries = client.query_images_with_intrinsics_file_path,
                 retrieval = client_server_retrieved_pairs_path,
-                features = client_local_features_path,
+                features = client.local_feature_path,
                 matches = client_server_matches_path,
                 results = localized_poses_file_path,
                 covisibility_clustering=True,
@@ -220,4 +226,4 @@ class Server:
             )
 
         
-        return self.base_dir_attack / client_name
+        return 
