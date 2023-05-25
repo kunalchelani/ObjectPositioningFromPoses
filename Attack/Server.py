@@ -17,7 +17,7 @@ class Server:
                  images_dir: Union[str, Path],
                  base_dir_db: Union[str, Path] = "data/server/db",
                  base_dir_query: Union[str, Path] = "data/server/query",
-                 feature: str = "Superpoint_inloc",
+                 feature: str = "superpoint_aachen",
                  num_matched_pairs_covis_db: int = 30,
                  num_matched_pairs_covis_localization: int = 30,
                  thresh_ransac_pnp: float = 12) -> None:
@@ -68,6 +68,7 @@ class Server:
 
         self.db_sfm_dir = self.base_dir_db / f"{self.local_feature_name}/" / "sfm"
         self.name = name
+        self.model_path = self.base_dir_db / "model.ply"
         
     def prep(self,
              force_extract_local: bool = False,
@@ -75,7 +76,7 @@ class Server:
              force_extract_pairs_from_covis:bool  = False,
              force_match_features: bool = False,
              perform_server_sfm: bool = False,
-             export_ply: bool  = False) -> None:
+             export_ply: bool  = True) -> None:
 
         # Skip if already done and not forced
 
@@ -137,7 +138,7 @@ class Server:
                  force_extract_local_features: bool = False,
                  force_extract_global_features: bool = False,
                  force_retrival: bool = False,
-                 force_match_client_server: bool = False,
+                 force_match_features: bool = False,
                  ):
 
         # Extract local features from query images
@@ -201,14 +202,14 @@ class Server:
                                         db_descriptors = self.global_feature_path,
                                         )
 
-        if force_match_client_server or (not client_server_matches_path.exists()):
+        if force_match_features or (not client_server_matches_path.exists()):
 
             client_server_matches_path = match_features.main(conf= self.matcher_conf, 
                                                             pairs = client_server_retrieved_pairs_path, 
                                                             features = client.local_feature_path, 
                                                             matches = client_server_matches_path, 
                                                             features_ref = self.local_feature_path,
-                                                            force_match = force_match_client_server,
+                                                            force_match = force_match_features,
                                                             )
         
         # -------------------------------- Localization ------------------------------------ #

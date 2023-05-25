@@ -76,9 +76,10 @@ def get_cam_dist_residual(R_est, t_est, scale, R_s, t_s, R_c, t_c):
 
 
 def exp(w):
-    # Input
-    # w: np.array([3,])
-    
+    '''
+    Input
+    w: np.array([3,])
+    '''
     theta = np.linalg.norm(w)
     v = w/theta
     [v1, v2, v3] = [v[0], v[1], v[2]]
@@ -88,8 +89,10 @@ def exp(w):
     return R.from_matrix(np.eye(3) + np.sin(theta)*v_cross + (1-np.cos(theta))*v_cross_sq)
 
 def log(Rot):
-    # Input
-    # Rot: scipy.spatial.transform.Rotation
+    '''
+    Input
+    Rot: scipy.spatial.transform.Rotation
+    '''
     
     Rmat = R.as_matrix(Rot)
     Y = 0.5*(Rmat - Rmat.transpose())
@@ -101,13 +104,15 @@ def log(Rot):
         return np.arcsin(y_norm) * y/y_norm
 
 def avg_SO3(Rots, epsilon, max_num_iters = 1000):
-    # Input
-    # Rots: list[scipy.spatial.transform.Rotation] - list of rotations to average
-    # epsilon: float - convergence threshold
-    # max_num_iters: int - maximum number of iterations
+    '''
+    Input
+    Rots: list[scipy.spatial.transform.Rotation] - list of rotations to average
+    epsilon: float - convergence threshold
+    max_num_iters: int - maximum number of iterations
     
-    # Output
-    # R_est: scipy.spatial.transform.Rotation
+    Output
+    R_est: scipy.spatial.transform.Rotation
+    '''
     
     iter = 0
     R_est = Rots[0]
@@ -167,8 +172,13 @@ def align_poses(attack_poses_path: Union[str, Path],
                 scale: float,
                 average_inliers: bool = True,
                 query_imnames_dir: Union[str, Path] = None,
+                inliers_save_path: Union[str, Path] = None,
                 ):
-
+    '''
+    Align the set of poses using the best single camera alignment and 
+    optionally averaging the inliers from the best alignment
+    '''
+    
     if isinstance(attack_poses_path, str):
         attack_poses_path = Path(attack_poses_path)
     if isinstance(local_poses_path, str):
@@ -196,8 +206,11 @@ def align_poses(attack_poses_path: Union[str, Path],
                                                 query_imnames = query_imnames,
                                                 )
 
+    
+    R_final = R.from_matrix(r).as_quat()
+    t_final = t.reshape(-1, 3)
     ## Average transformation calculation
-
+    
     if average_inliers:
         Rf_ins = []
         t_averaged = np.zeros(3,)
@@ -209,38 +222,42 @@ def align_poses(attack_poses_path: Union[str, Path],
         R_averaged = avg_SO3(Rf_ins, epsilon=0.001, max_num_iters=100)
         t_averaged /= len(inliers)
 
-        print(R_averaged.as_quat())
-        print(t.reshape(-1, 3))
-        print(inliers)  
-        return R_averaged.as_quat(), t_averaged.reshape(-1, 3), inliers
-
-    else:
-        return R.from_matrix(r).as_quat(), t.reshape(-1, 3), inliers
+        R_final = R_averaged.as_quat()
+        t_final = t_averaged.reshape(-1, 3)
+    
+    # Save inliers if needed
+    if inliers_save_path is not None:
+        with open(inliers_save_path, 'w') as f:
+            for item in inliers:
+                f.write("%s\n" % item)
+    
+    return R_final, t_final 
     
 
-def position_object(object_ply_path: Union[str, Path],
-                    trasnformed_object_ply_path: Union[str, Path],
+def position_object(object_model_path: Union[str, Path],
+                    transformed_object_model_path: Union[str, Path],
+                    scale: float,
                     rotation: Union[np.array, R],
                     translation: np.array,
-                    scale: float):
+                    ):
     """
     Position the object in the scene using the rotation and translation
     """
+    
     # Load the object
     
-    assert object_ply_path.exists(), f"object_ply_path {object_ply_path} does not exist"
+    assert object_model_path.exists(), f"Object model path {object_model_path} does not exist"
     
     if isinstance(rotation, np.ndarray):
         rotation = R.from_quat(rotation)
     
-    pcd_orig = o3d.io.read_point_cloud(str(object_ply_path))
+    pcd_orig = o3d.io.read_point_cloud(str(object_model_path))
     pts = np.asarray(pcd_orig.points)
     
     pts_transformed = scale * rotation.apply(pts) +  translation.reshape(-1, 3)
-    
     pcd_transformed = o3d.geometry.PointCloud()
     pcd_transformed.points = o3d.utility.Vector3dVector(pts_transformed)
     pcd_transformed.colors = pcd_orig.colors
         
-    print("Saving transformed ply file to {trasnformed_object_ply_path}")
-    o3d.io.write_point_cloud(str(trasnformed_object_ply_path), pcd_transformed)
+    print(f"Saving transformed ply file to {transformed_object_model_path}")
+    o3d.io.write_point_cloud(str(transformed_object_model_path), pcd_transformed)

@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Union
 from hloc import extract_features
 from . import utils_prep, utils_attack, Server
+import open3d as o3d
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+from tqdm import tqdm
 
 # A client class that is used to attack the server
 
@@ -52,7 +56,7 @@ class Client:
         self.local_feature_path = base_dir / feature / self.local_feature_conf['output']
         self.global_feature_path = base_dir / self.global_feature_conf['output']
 
-        self.object_ply_path = base_dir / "model.ply"
+        self.object_model_path = base_dir / "model.ply"
         
     def prep_for_localization(self, 
                               query_fnames: list = None,
@@ -86,7 +90,7 @@ class Client:
                                                                 feature_path = self.global_feature_path,
                                                                 )
 
-        pass
+        print("Client preparation done!")
     
     def align_local_server_poses(self,
                                  server: Server,
@@ -95,7 +99,8 @@ class Client:
                                  scale: float,
                                  num_retrived_db_images: int = 30,
                                  average_inliers: bool = True,
-                                 query_imnames_dir: Union[str, Path] = None,):
+                                 query_imnames_dir: Union[str, Path] = None,
+                                 save_inliers = False):
         
         local_poses_path = self.colmap_dir / "images.txt"
         if not local_poses_path.exists():
@@ -109,21 +114,35 @@ class Client:
             
         local_poses_path = self.colmap_dir / "images.txt"
         attack_poses_path =  attack_base_dir / f"poses_{server.matcher_name}_{num_retrived_db_images}_{server.thresh_ransac_pnp}.txt"
-        aligned_object_ply_path = attack_base_dir / f"aligned_model_{num_retrived_db_images}_{server.thresh_ransac_pnp}.ply"
         
-        rot, trans, inliers = utils_attack.align_poses(attack_poses_path = attack_poses_path,
+        inliers_save_path = None    
+        if save_inliers:
+            inliers_save_path = attack_base_dir / f"align_inliers_{server.matcher_name}_{num_retrived_db_images}_{server.thresh_ransac_pnp}.txt"
+    
+        rot, trans = utils_attack.align_poses(attack_poses_path = attack_poses_path,
                 local_poses_path = local_poses_path,
                 rot_thresh = rot_thresh,
                 cc_thresh = cc_thresh,
                 scale = scale,
                 average_inliers = average_inliers,
                 query_imnames_dir = query_imnames_dir,
+                inliers_save_path = inliers_save_path,
                 )
 
-        return rot, trans, inliers
+        return rot, trans
     
-    def visualize_cams_server_map():
-        pass
-
-    def visualize_aligned_model_server_map():
-        pass
+    def transform_object_model(self,
+                               server,
+                               scale: float,
+                               rotation:  Union[np.array, R],
+                               translation: np.array,
+                               num_retrived_db_images: int  = 30,
+                               ) -> o3d.geometry.PointCloud:
+        
+        transformed_object_model_path = self.base_dir / server.name / self.feature / f"obj_model_transformed_{server.matcher_name}_{num_retrived_db_images}_{server.thresh_ransac_pnp}.ply"
+        
+        utils_attack.position_object(object_model_path = self.object_model_path,
+                                     transformed_object_model_path = transformed_object_model_path,
+                                     scale = scale,
+                                     rotation = rotation,
+                                     translation = translation)

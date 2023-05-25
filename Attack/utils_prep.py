@@ -4,7 +4,11 @@ import open3d as o3d
 
 # Feature Configs
 superpoint_inloc_feature_conf  = extract_features.confs['superpoint_inloc']
+superpoint_inloc_feature_conf["name"] = 'superpoint_inloc'
+
 superpoint_aachen_feature_conf = extract_features.confs['superpoint_aachen']
+superpoint_aachen_feature_conf["name"] = 'superpoint_aachen'
+
 sift_feature_conf = extract_features.confs['sift']
 r2d2_feature_conf = extract_features.confs['r2d2']
 local_feature_confs = {'superpoint_inloc' : superpoint_inloc_feature_conf, 'superpoint_aachen': superpoint_aachen_feature_conf, 'sift' : sift_feature_conf, 'r2d2' : r2d2_feature_conf}
