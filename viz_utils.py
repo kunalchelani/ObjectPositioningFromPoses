@@ -1,14 +1,8 @@
 import numpy as np
 import open3d as o3d
-from scipy.spatial.transform import Rotation as R
-import hloc.utils.read_write_model as rwm
 from pathlib import Path
-from tqdm import tqdm
 import numpy as np
-import pdb
-import os
 from typing import Union
-from Attack import Server, Client
 from Attack import utils_attack
 
 
@@ -41,10 +35,19 @@ def get_cam_lines_from_poses(Rs, ts, cam_color, line_len = 0.1):
 
     return cam_lines
 
-def visualize_attack(server_poses_path: Union[str, Path] = None,
+def custom_draw_geometry_with_rotation(geometries):
+
+    def rotate_view(vis):
+        ctr = vis.get_view_control()
+        ctr.rotate(5.0, 0.0,)
+        return False
+
+    o3d.visualization.draw_geometries_with_animation_callback(geometries,
+                                                              rotate_view)
+
+def visualize_attack(server_poses_path: Union[str, Path, list] = None,
                      local_poses_path: Union[str, Path] = None,
-                     object_model_path: Union[str, Path] = None,
-                     transformed_object_model_path: Union[str, Path] = None,
+                     transformed_object_model_path: Union[str, Path, list] = None,
                      inliers_path: Union[str, Path] = None,
                      server_model_path: Union[str, Path] = None,
                      show_server_poses:bool = True,
@@ -53,23 +56,39 @@ def visualize_attack(server_poses_path: Union[str, Path] = None,
                      show_transformed_local_poses:bool = False,
                      show_transformed_object:bool = False,
                      show_server_map:bool = True,
-                     server_map_unicolor:bool = False,
-                     object_model_unicolor:bool = False,
-                     remove_cams_beyond = 15,
-                     num_retrived_db_images = 30
+                     server_map_unicolor:np.ndarray = None,
+                     object_model_unicolor:np.ndarray = None,
+                     remove_cams_beyond: int = 15,
+                     server_poses_cam_color: np.ndarray = np.array([1,0,0]),
+                     local_poses_cam_color: np.ndarray = np.array([0,1,0]),
+                     num_retrived_db_images: int = 30,
+                     rotate:bool = False,
+                     subsample_server_map:bool = True
                      ):
 
     geometries = []
     
     if show_server_poses:
         
+        if server_poses_path is None:
+            print("Please provide server poses path")
+        if isinstance(server_poses_path, str):
+            server_poses_path = Path(server_poses_path)
+
         assert server_poses_path.exists(), "Server poses path does not exist"
         
-        cam_color = np.array([1,0,0])
+        if server_poses_cam_color is None:
+            server_poses_cam_color = np.array([1,0,0])
         cam_line_len = 0.1
         
-        Rs, ts = utils_attack.get_Rt_from_hloc_poses_file(server_poses_path, inlier_names = None)
-        cam_lines = get_cam_lines_from_poses(Rs, ts, cam_color, line_len = cam_line_len)
+        try:
+            Rs, ts = utils_attack.get_Rt_from_hloc_poses_file(server_poses_path, inlier_names = None)
+            print("Using hloc poses")
+        except:
+            Rs, ts = utils_attack.get_Rt_from_colmap_images_file(server_poses_path, inlier_names = None)
+            print("Using colmap poses")
+
+        cam_lines = get_cam_lines_from_poses(Rs, ts, server_poses_cam_color, line_len = cam_line_len)
         
         # Skip cameras beyond a threshold distance from the origin
         if not show_inlier_poses_only:
@@ -112,6 +131,13 @@ def visualize_attack(server_poses_path: Union[str, Path] = None,
 
         if server_model_path.suffix == ".ply":
             server_map = o3d.io.read_point_cloud(server_model_path.as_posix())
+        if subsample_server_map:
+            total_point = 500000
+            every_k_points = int(np.asarray(server_map.points).shape[0]/total_point)
+            if every_k_points < 1:
+                pass
+            else:
+                server_map = server_map.uniform_down_sample(every_k_points = every_k_points)
         
         elif server_model_path.suffix == ".obj":
             server_map = o3d.io.read_triangle_mesh(server_model_path.as_posix(), True)
@@ -119,8 +145,8 @@ def visualize_attack(server_poses_path: Union[str, Path] = None,
         else:
             raise NotImplementedError("Server model path should be either .ply or .obj")
         
-        if server_map_unicolor:
-                server_map.paint_uniform_color(np.array([1,0,0]))
+        if server_map_unicolor is not None:
+                server_map.paint_uniform_color(server_map_unicolor)
                 
         geometries.append(server_map)
 
@@ -128,25 +154,64 @@ def visualize_attack(server_poses_path: Union[str, Path] = None,
     
         assert transformed_object_model_path is not None, "Please provide transformed object model path"
         
+        if isinstance(transformed_object_model_path, Path):
+            transformed_object_model_paths = [transformed_object_model_path]
         if isinstance(transformed_object_model_path, str):
-            transformed_object_model_path = Path(transformed_object_model_path)
+            transformed_object_model_paths = [Path(transformed_object_model_path)]
+        elif isinstance(transformed_object_model_path, list):
+            transformed_object_model_paths = [Path(p) for p in transformed_object_model_path]
+        
+        for transformed_object_model_path in transformed_object_model_paths:
 
-        assert transformed_object_model_path.exists(), "Transformed object model path does not exist"
+            assert transformed_object_model_path.exists(), "Transformed object model path does not exist"    
             
-        
-        if transformed_object_model_path.suffix == ".ply":
+            if transformed_object_model_path.suffix == ".ply":
+                
+                transformed_object = o3d.io.read_point_cloud(transformed_object_model_path.as_posix())
+                
+            elif transformed_object_model_path.suffix == ".obj":
+                transformed_object = o3d.io.read_triangle_mesh(transformed_object_model_path.as_posix(), True)
             
-            transformed_object = o3d.io.read_point_cloud(transformed_object_model_path.as_posix())
+            else:
+                raise NotImplementedError("Transformed object model path should be either .ply or .obj")
             
-        elif transformed_object_model_path.suffix == ".obj":
-            transformed_object = o3d.io.read_triangle_mesh(transformed_object_model_path.as_posix(), True)
+            if object_model_unicolor is not None:
+                    transformed_object.paint_uniform_color(object_model_unicolor)
         
-        else:
-            raise NotImplementedError("Transformed object model path should be either .ply or .obj")
+            geometries.append(transformed_object)
+
+
+    if show_transformed_local_poses:
         
-        if object_model_unicolor:
-                transformed_object.paint_uniform_color(np.array([0,1,0]))
+        if local_poses_path is None:
+            print("Please provide server poses path")
+        if isinstance(local_poses_path, str):
+            local_poses_path = Path(server_poses_path)
+
+        assert local_poses_path.exists(), "Server poses path does not exist"
+        
+        if local_poses_cam_color is None:
+            local_poses_cam_color = np.array([1,0,0])
+        cam_line_len = 0.1
+        
+        try:
+            Rs, ts = utils_attack.get_Rt_from_hloc_poses_file(local_poses_path, inlier_names = None)
+            print("Using hloc poses")
+        except:
+            Rs, ts = utils_attack.get_Rt_from_colmap_images_file(local_poses_path, inlier_names = None)
+            print("Using colmap poses")
+
+        cam_lines = get_cam_lines_from_poses(Rs, ts, local_poses_cam_color, line_len = cam_line_len)
+
+        for cam_line in cam_lines:
+            if np.linalg.norm(np.mean(np.asarray(cam_line.points), axis = 0)) < remove_cams_beyond:
+                geometries.append(cam_line)
+        
+
+    if not rotate:
+            
+        o3d.visualization.draw_geometries(geometries)
     
-        geometries.append(transformed_object)
-            
-    o3d.visualization.draw_geometries(geometries)
+    else:
+
+        custom_draw_geometry_with_rotation(geometries)

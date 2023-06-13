@@ -261,3 +261,31 @@ def position_object(object_model_path: Union[str, Path],
         
     print(f"Saving transformed ply file to {transformed_object_model_path}")
     o3d.io.write_point_cloud(str(transformed_object_model_path), pcd_transformed)
+
+def transform_colmap_poses(colmap_images_file, transformed_poses_file, s,r, t):
+
+    images = rwm.read_images_text(colmap_images_file)
+    images_new = {}
+        
+
+    for id in images:
+        imid = images[id].id
+        name = images[id].name
+        point3D_ids = images[id].point3D_ids
+        tvec = images[id].tvec
+        xys = images[id].xys
+        camera_id = images[id].camera_id
+
+        qvec_old = images[id].qvec
+        qvec_old_n = np.array([qvec_old[1],qvec_old[2],qvec_old[3],qvec_old[0]], dtype = np.float32)
+        r_old= R.from_quat(qvec_old_n)
+        qvec = (r_old * r.inv()).as_quat()
+        qvec = np.array([qvec[3], qvec[0], qvec[1], qvec[2]], dtype=np.float32)
+        
+        tvec_old = images[id].tvec
+        tvec = s * tvec_old - (r_old * r.inv()).apply(t)
+
+        images_new[id] = rwm.Image(id = imid, name = name, point3D_ids = point3D_ids,
+                        camera_id = camera_id, tvec = tvec.reshape(3,), xys = xys, qvec = qvec)
+    
+    rwm.write_images_text(images_new, transformed_poses_file)
